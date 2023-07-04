@@ -46,10 +46,6 @@ function M.hurl(config)
     function(cmd)
       vim.schedule(function()
         if cmd.code == 0 then
-          -- Filetype detection
-          local _, _, filetype = string.find(cmd.stdout, [[.*content%-type.*: .*/(.*);.*]])
-          vim.api.nvim_set_option_value("filetype", filetype, { buf = buf })
-
           -- We don't want to include the header information in the good output ideally with its terminal colors so we
           -- have to parse both the returned content and headers so they don't conflict.
           local stdout_unparsed_t = vim.split(cmd.stdout, "\n")
@@ -65,6 +61,12 @@ function M.hurl(config)
             -- treesitter injections I could then ideally reintroduce highlights for the headers; however, for this POC
             -- idaf.
             local removed_term_codes_line, _ = line:gsub([[%[%d*m]], ""):gsub([[%[%d*;%d*m]], "")
+
+            -- Filetype detection
+            local _, _, filetype = removed_term_codes_line:find([[.*content%-type: .*/(.*);.*]])
+            if filetype then
+              vim.api.nvim_set_option_value("filetype", filetype, { buf = buf })
+            end
             table.insert(stdout_t, removed_term_codes_line)
           end
           vim.api.nvim_buf_set_lines(buf, 0, -1, true, stdout_t)
