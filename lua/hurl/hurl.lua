@@ -17,7 +17,6 @@ function M.hurl(config)
     style = "minimal",
     border = "rounded",
   })
-  local term = vim.api.nvim_open_term(buf,{})
 
   -- This ensures the window created is closed instead of covering the editor when a split is created
   vim.api.nvim_create_autocmd("WinLeave", {
@@ -33,19 +32,49 @@ function M.hurl(config)
   })
 
   -- Build arguments list
-  local hurl_args_t = {}
+  local hurl_args_t = { "hurl", file, "--include" }
   if config.color then
     table.insert(hurl_args_t, "--color")
   else
     table.insert(hurl_args_t, "--no-color")
   end
-  local hurl_args = table.concat(hurl_args_t, " ")
 
-  vim.fn.jobstart("hurl " .. file .. " " .. hurl_args, {
-    width = width,
-    on_stdout = function(chan, data) vim.api.nvim_chan_send(term,table.concat(data, "\r\n")) end,
-    on_stderr = function(chan, data) vim.api.nvim_chan_send(term,table.concat(data, "\r\n")) end
-  })
+  vim.system(
+    hurl_args_t,
+    { text = true },
+    ---@param cmd SystemCompleted
+    function(cmd)
+      vim.schedule(function()
+        if cmd.code == 0 then
+          -- Filetype detection
+          local _, _, filetype = string.find(cmd.stdout, [[.*content%-type.*: .*/(.*);.*]])
+          vim.api.nvim_set_option_value("filetype", filetype, { buf = buf })
+
+          -- We don't want to include the header information in the good output ideally with its terminal colors so we
+          -- have to parse both the returned content and headers so they don't conflict.
+          local stdout_unparsed_t = vim.split(cmd.stdout, "\n")
+          local should_record = false
+          local stdout_t = {}
+          for _, line in ipairs(stdout_unparsed_t) do
+            if should_record then
+              table.insert(stdout_t, line)
+            elseif line == "" then
+              should_record = true
+            end
+            -- This cursed gsub removes all color codes from the header section of the return. If I actually understood
+            -- treesitter injections I could then ideally reintroduce highlights for the headers; however, for this POC
+            -- idaf.
+            local removed_term_codes_line, _ = line:gsub([[%[%d*m]], ""):gsub([[%[%d*;%d*m]], "")
+            table.insert(stdout_t, removed_term_codes_line)
+          end
+          vim.api.nvim_buf_set_lines(buf, 0, -1, true, stdout_t)
+        else
+          local term = vim.api.nvim_open_term(buf, {})
+          vim.api.nvim_chan_send(term, table.concat(vim.split(cmd.stderr, "\n"), "\r\n"))
+        end
+      end)
+    end
+  )
 end
 
 return M
