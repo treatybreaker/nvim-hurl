@@ -31,10 +31,11 @@ function M.open_nui(config, flags)
     -- mount/open the component
     S.win:mount()
 
-    -- unmount component when cursor leaves buffer
-    S.win:on(event.BufLeave, function()
-      S.win:unmount()
-    end)
+    -- unmount component when cursor leaves Window
+    S.win:on(event.WinLeave, function()
+      -- Hide the window to allow splits etc. functionality, up to the user to actually close the window
+      S.win:hide()
+    end, { once = true })
   elseif config.win_type == "split" then
     S.win = Split(config.win_options)
 
